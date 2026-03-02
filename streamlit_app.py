@@ -4,7 +4,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from app.config import CHUNKS_PATH, FAISS_INDEX_PATH, GEMINI_API_KEY, TOP_K
+from app.config import FAISS_DIR, GEMINI_API_KEY, TOP_K
 from app.rag_pipeline import answer_question
 
 st.set_page_config(
@@ -55,7 +55,7 @@ st.markdown(
 
 
 def artifacts_ready() -> bool:
-    return Path(CHUNKS_PATH).exists() and Path(FAISS_INDEX_PATH).exists()
+    return (Path(FAISS_DIR) / "index.faiss").exists() and (Path(FAISS_DIR) / "index.pkl").exists()
 
 
 def render_citations(citations: list[dict[str, object]]) -> None:
@@ -102,7 +102,7 @@ if prompt:
 
     with st.chat_message("assistant"):
         if not artifacts_ready():
-            answer = "Index files are missing. Run `python scripts/build_index.py` first."
+            answer = "LangChain index files are missing. Run `python scripts/build_index.py` first."
             st.markdown(answer)
             st.session_state.messages.append({"role": "assistant", "content": answer, "citations": []})
         elif not GEMINI_API_KEY:

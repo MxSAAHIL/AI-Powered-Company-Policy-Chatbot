@@ -11,8 +11,7 @@ from app.chunking import chunk_records
 from app.config import CHUNK_OVERLAP, CHUNK_SIZE, DATASET_PATH
 from app.data_loader import detect_knowledge_column, load_dataset, prepare_records
 from app.default_knowledge import get_support_records
-from app.embeddings import embed_documents
-from app.vector_store import build_faiss_index, save_artifacts
+from app.vector_store import build_faiss_vector_store, save_artifacts
 
 
 def main() -> None:
@@ -22,8 +21,7 @@ def main() -> None:
     support_records = get_support_records(start_row_id=len(records))
     all_records = records + support_records
     chunks = chunk_records(all_records, chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
-    embeddings = embed_documents([str(chunk["text"]) for chunk in chunks])
-    index = build_faiss_index(embeddings)
+    vector_store = build_faiss_vector_store(chunks)
 
     metadata = {
         "dataset_path": str(DATASET_PATH),
@@ -32,18 +30,17 @@ def main() -> None:
         "valid_row_count": len(records),
         "support_record_count": len(support_records),
         "chunk_count": len(chunks),
-        "embedding_dimension": int(embeddings.shape[1]),
+        "embedding_model": "langchain_huggingface",
         "candidate_columns": [score.__dict__ for score in scores],
     }
-    save_artifacts(chunks, index, metadata)
+    save_artifacts(vector_store, metadata)
 
     print(f"Detected knowledge column: {text_column}")
     print(f"Rows loaded: {len(df)}")
     print(f"Rows retained: {len(records)}")
     print(f"Support records added: {len(support_records)}")
     print(f"Chunks created: {len(chunks)}")
-    print(f"Embedding dimension: {embeddings.shape[1]}")
-    print("Saved artifacts to data/processed/")
+    print("Saved LangChain FAISS artifacts to data/processed/")
 
 
 if __name__ == "__main__":

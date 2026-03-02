@@ -3,38 +3,43 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import faiss
-import numpy as np
-import pandas as pd
+from langchain_community.vectorstores import FAISS
+from langchain_core.documents import Document
 
-from app.config import CHUNKS_PATH, FAISS_INDEX_PATH, METADATA_PATH, ensure_data_directories
-
-
-def build_faiss_index(embeddings: np.ndarray) -> faiss.IndexFlatL2:
-    if embeddings.size == 0:
-        raise ValueError("Cannot build FAISS index with empty embeddings.")
-    dimension = embeddings.shape[1]
-    index = faiss.IndexFlatL2(dimension)
-    index.add(embeddings)
-    return index
+from app.config import FAISS_DIR, METADATA_PATH, ensure_data_directories
+from app.embeddings import get_embeddings
 
 
-def save_artifacts(
-    chunks: list[dict[str, object]],
-    index: faiss.IndexFlatL2,
-    metadata: dict[str, object],
-) -> None:
+def build_documents(chunks: list[dict[str, object]]) -> list[Document]:
+    documents: list[Document] = []
+    for chunk in chunks:
+        documents.append(
+            Document(
+                page_content=str(chunk["text"]),
+                metadata={
+                    "row_id": int(chunk["row_id"]),
+                    "chunk_id": str(chunk["chunk_id"]),
+                    "chunk_index": int(chunk["chunk_index"]),
+                    "snippet": str(chunk["snippet"]),
+                    "source_column": str(chunk["source_column"]),
+                },
+            )
+        )
+    return documents
+
+
+def build_faiss_vector_store(chunks: list[dict[str, object]]) -> FAISS:
+    documents = build_documents(chunks)
+    if not documents:
+        raise ValueError("Cannot build vector store with empty chunks.")
+    return FAISS.from_documents(documents, get_embeddings())
+
+
+def save_artifacts(vector_store: FAISS, metadata: dict[str, object]) -> None:
     ensure_data_directories()
-    pd.DataFrame(chunks).to_parquet(CHUNKS_PATH, index=False)
+    vector_store.save_local(str(FAISS_DIR))
     with open(METADATA_PATH, "w", encoding="utf-8") as handle:
         json.dump(metadata, handle, indent=2)
-    faiss.write_index(index, str(FAISS_INDEX_PATH))
-
-
-def load_chunks(path: Path = CHUNKS_PATH) -> pd.DataFrame:
-    if not path.exists():
-        raise FileNotFoundError(f"Missing chunk metadata file: {path}")
-    return pd.read_parquet(path)
 
 
 def load_metadata(path: Path = METADATA_PATH) -> dict[str, object]:
@@ -44,8 +49,13 @@ def load_metadata(path: Path = METADATA_PATH) -> dict[str, object]:
         return json.load(handle)
 
 
-def load_index(path: Path = FAISS_INDEX_PATH) -> faiss.IndexFlatL2:
-    if not path.exists():
-        raise FileNotFoundError(f"Missing FAISS index file: {path}")
-    return faiss.read_index(str(path))
-
+def load_vector_store(path: Path = FAISS_DIR) -> FAISS:
+    index_path = path / "index.faiss"
+    store_path = path / "index.pkl"
+    if not index_path.exists() or not store_path.exists():
+        raise FileNotFoundError(f"Missing LangChain FAISS artifacts in: {path}")
+    return FAISS.load_local(
+        str(path),
+        get_embeddings(),
+        allow_dangerous_deserialization=True,
+    )
